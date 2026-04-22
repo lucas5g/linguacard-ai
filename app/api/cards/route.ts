@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/src/lib/prisma';
 import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
+import { translateWord } from '@/src/services/geminiService';
 
 export async function GET() {
   try {
@@ -17,13 +19,33 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const data = await request.json();
+    const normalizedWord = typeof data.word === 'string' ? data.word.trim() : '';
+
+    if (!normalizedWord) {
+      return NextResponse.json({ error: 'Word obrigatoria' }, { status: 400 });
+    }
+
+    const existingCard = await prisma.flashcard.findFirst({
+      where: {
+        word: {
+          equals: normalizedWord,
+          mode: 'insensitive',
+        },
+      },
+    });
+
+    if (existingCard) {
+      return NextResponse.json({ error: 'Ja existe um card com essa word' }, { status: 409 });
+    }
+
+    const translation = await translateWord(normalizedWord);
     const newCard = await prisma.flashcard.create({
       data: {
-        word: data.word,
-        translatedText: data.translatedText,
-        pronunciation: data.pronunciation,
-        exampleSentence: data.exampleSentence,
-        exampleTranslation: data.exampleTranslation,
+        word: normalizedWord,
+        translatedText: translation.translatedText,
+        pronunciation: translation.pronunciation,
+        exampleSentence: translation.exampleSentence,
+        exampleTranslation: translation.exampleTranslation,
       },
     });
 
@@ -32,6 +54,14 @@ export async function POST(request: Request) {
     return NextResponse.json(newCard);
   } catch (error) {
     console.error("Prisma Create Error:", error);
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Ja existe um card com essa word' },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({ error: "Erro ao criar card" }, { status: 500 });
   }
 }

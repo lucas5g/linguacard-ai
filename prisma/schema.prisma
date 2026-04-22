@@ -14,7 +14,7 @@ datasource db {
 
 model Flashcard {
   id                 String   @id @default(cuid())
-  word               String
+  word               String   @unique
   translatedText     String
   pronunciation      String?
   exampleSentence    String?

@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Brain, Languages, Plus, Search } from 'lucide-react';
-import { translateWord } from '../src/services/geminiService';
 import { FlashcardCard } from './components/FlashcardCard';
 import type { Flashcard } from '../src/types/flashcard';
 
@@ -203,18 +202,23 @@ export default function Home() {
     setIsTranslating(true);
 
     try {
-      const translation = await translateWord(inputWord);
       const response = await fetch('/api/cards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           word: inputWord.trim(),
-          ...translation,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Erro ao salvar no banco');
+        const errorData = await response.json().catch(() => null);
+
+        if (response.status === 409) {
+          alert(errorData?.error ?? 'Ja existe um card com essa word');
+          return;
+        }
+
+        throw new Error(errorData?.error ?? 'Erro ao salvar no banco');
       }
 
       const newCard = await response.json();
@@ -224,7 +228,7 @@ export default function Home() {
       inputRef.current?.focus();
     } catch (error) {
       console.error(error);
-      alert('Erro ao processar. Verifique sua conexão e chave de API.');
+      alert(error instanceof Error ? error.message : 'Erro ao processar. Verifique sua conexão e chave de API.');
     } finally {
       setIsTranslating(false);
     }
