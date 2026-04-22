@@ -374,20 +374,20 @@ export default function Home() {
 
             <div className="mb-12">
               <form onSubmit={handleAddCard}>
-                <div className="flex gap-2 rounded-2xl border border-[#222] bg-[#151515] p-2 shadow-xl">
+                <div className="flex items-center gap-2 rounded-2xl border border-[#222] bg-[#151515] p-2 shadow-xl">
                   <input
                     ref={inputRef}
                     type="text"
                     placeholder="Adicione palavra em ingles..."
                     value={inputWord}
                     onChange={(event) => setInputWord(event.target.value)}
-                    className="flex-1 bg-transparent px-4 py-3 text-lg text-white placeholder:text-[#444] focus:outline-none"
+                    className="min-w-0 flex-1 bg-transparent px-4 py-3 text-lg text-white placeholder:text-[#444] focus:outline-none"
                     disabled={isTranslating}
                   />
                   <button
                     type="submit"
                     disabled={!inputWord.trim() || isTranslating}
-                    className={`flex items-center justify-center gap-2 rounded-xl px-6 font-medium transition-all ${
+                    className={`shrink-0 flex items-center justify-center gap-2 rounded-xl px-6 font-medium transition-all ${
                       isTranslating
                         ? 'bg-[#222] text-[#555]'
                         : 'bg-white text-black hover:bg-[#E5E5E5] active:scale-95'
@@ -397,7 +397,7 @@ export default function Home() {
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
                     ) : (
                       <>
-                        <Plus className="h-5 w-5" />
+                        <Plus className="h-12 w-5" />
                         Adicionar
                       </>
                     )}
