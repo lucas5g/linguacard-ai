@@ -48,16 +48,15 @@ export function FlashcardCard({ card, onToggleFlip, onDelete }: FlashcardCardPro
           </div>
         </div>
 
-        <div className="absolute inset-0 backface-hidden rotate-y-180 bg-white text-black rounded-3xl p-8 flex flex-col justify-center items-center overflow-hidden">
-          <div className="absolute inset-0 opacity-5 bg-[radial-gradient(circle_at_center,_#000_1px,_transparent_1px)] bg-[length:20px_20px]" />
+        <div className="absolute inset-0 backface-hidden rotate-y-180 bg-[#1E1E1E] text-[#F2F2F2] rounded-3xl p-8 flex flex-col justify-center items-center overflow-hidden border border-[#2A2A2A]">
           <div className="relative z-10 w-full flex flex-col items-center">
-            <span className="text-black/40 text-xs font-mono mb-4 uppercase tracking-widest">Português</span>
+            <span className="text-[#8A8A8A] text-xs font-mono mb-4 uppercase tracking-widest">Português</span>
             <h2 className="text-3xl font-bold text-center mb-6">{card.translatedText}</h2>
 
             {card.exampleSentence && (
-              <div className="w-full space-y-2 pt-6 border-t border-black/10">
-                <p className="text-sm text-black/90 italic text-center">"{card.exampleSentence}"</p>
-                <p className="text-xs text-black/50 text-center">{card.exampleTranslation}</p>
+              <div className="w-full space-y-2 pt-6 border-t border-white/10">
+                <p className="text-sm text-[#E0E0E0] italic text-center">"{card.exampleSentence}"</p>
+                <p className="text-xs text-[#9A9A9A] text-center">{card.exampleTranslation}</p>
               </div>
             )}
           </div>
@@ -67,7 +66,7 @@ export function FlashcardCard({ card, onToggleFlip, onDelete }: FlashcardCardPro
               e.stopPropagation();
               onToggleFlip(card.id, card.isFlipped);
             }}
-            className="absolute bottom-4 flex items-center gap-1 text-black/30 hover:text-black/60 text-[10px] font-medium uppercase tracking-tighter transition-colors"
+            className="absolute bottom-4 flex items-center gap-1 text-[#7A7A7A] hover:text-[#CFCFCF] text-[10px] font-medium uppercase tracking-tighter transition-colors"
           >
             <RotateCcw className="w-3 h-3" /> View original
           </button>
