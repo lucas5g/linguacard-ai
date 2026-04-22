@@ -22,4 +22,14 @@ model Flashcard {
   isFlipped          Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  queueItem          QuizQueueItem?
+}
+
+model QuizQueueItem {
+  id         String    @id @default(cuid())
+  flashcardId String   @unique
+  position   Int       @unique
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  flashcard  Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
 }

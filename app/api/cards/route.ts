@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/src/lib/prisma';
+import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
 
 export async function GET() {
   try {
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
         exampleTranslation: data.exampleTranslation,
       },
     });
+
+    await getReconciledQuizQueue();
+
     return NextResponse.json(newCard);
   } catch (error) {
     console.error("Prisma Create Error:", error);
