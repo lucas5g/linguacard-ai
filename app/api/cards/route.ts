@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import prisma from '@/src/lib/prisma';
 import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
 import { translateWord } from '@/src/services/geminiService';
+
+const createFlashcardSchema = z.object({
+  word: z.string().trim().min(1, 'Word obrigatoria').max(50, 'Word deve ter no maximo 50 caracteres'),
+});
 
 export async function GET() {
   try {
@@ -19,11 +24,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    const normalizedWord = typeof data.word === 'string' ? data.word.trim() : '';
+    const parsedData = createFlashcardSchema.safeParse(data);
 
-    if (!normalizedWord) {
-      return NextResponse.json({ error: 'Word obrigatoria' }, { status: 400 });
+    if (!parsedData.success) {
+      return NextResponse.json({ error: parsedData.error.issues[0]?.message ?? 'Payload invalido' }, { status: 400 });
     }
+
+    const normalizedWord = parsedData.data.word;
 
     const existingCard = await prisma.flashcard.findFirst({
       where: {
