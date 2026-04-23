@@ -7,8 +7,17 @@ import { FlashcardCard } from './components/FlashcardCard';
 import type { Flashcard } from '../src/types/flashcard';
 
 const QUIZ_LENGTH = 10;
+const PAGE_SIZE = 10;
 
 type ViewMode = 'cards' | 'quiz';
+
+type CardsResponse = {
+  items: Flashcard[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+};
 
 function shuffleArray<T>(items: T[]) {
   const nextItems = [...items];
@@ -56,11 +65,16 @@ function reorderQueueAfterQuiz(queueIds: string[], quizCardIds: string[], mistak
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
-  const [cards, setCards] = useState<Flashcard[]>([]);
+  const [allCards, setAllCards] = useState<Flashcard[]>([]);
+  const [visibleCards, setVisibleCards] = useState<Flashcard[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
+  const [hasMoreCards, setHasMoreCards] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [inputWord, setInputWord] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [filter, setFilter] = useState('');
+  const [debouncedFilter, setDebouncedFilter] = useState('');
   const [queueIds, setQueueIds] = useState<string[]>([]);
   const [isQueueReady, setIsQueueReady] = useState(false);
   const [quizCardIds, setQuizCardIds] = useState<string[]>([]);
@@ -72,17 +86,38 @@ export default function Home() {
   const [hasFinishedQuiz, setHasFinishedQuiz] = useState(false);
   const [isFinishingQuiz, setIsFinishingQuiz] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasHydratedCardsRef = useRef(false);
+  const isFetchingCardsRef = useRef(false);
+  const cardsAbortControllerRef = useRef<AbortController | null>(null);
+  const latestCardsRequestRef = useRef(0);
 
   useEffect(() => {
     void loadInitialData();
   }, []);
 
   useEffect(() => {
-    const validIdSet = new Set(cards.map((card) => card.id));
+    const validIdSet = new Set(allCards.map((card) => card.id));
 
     setQuizCardIds((previousQuizIds) => previousQuizIds.filter((id) => validIdSet.has(id)));
     setMistakeCardIds((previousMistakeIds) => previousMistakeIds.filter((id) => validIdSet.has(id)));
-  }, [cards]);
+  }, [allCards]);
+
+  useEffect(() => {
+    const debounceTimeout = window.setTimeout(() => {
+      setDebouncedFilter(filter.trim());
+    }, 300);
+
+    return () => window.clearTimeout(debounceTimeout);
+  }, [filter]);
+
+  useEffect(() => {
+    if (!hasHydratedCardsRef.current) {
+      return;
+    }
+
+    void loadCardsPage(1, debouncedFilter, false);
+  }, [debouncedFilter]);
 
   useEffect(() => {
     if (quizCardIds.length === 0) {
@@ -96,7 +131,7 @@ export default function Home() {
   }, [currentQuestionIndex, quizCardIds.length]);
 
   const currentCard = quizCardIds.length > 0
-    ? cards.find((card) => card.id === quizCardIds[currentQuestionIndex]) ?? null
+    ? allCards.find((card) => card.id === quizCardIds[currentQuestionIndex]) ?? null
     : null;
   const isQuizActive = quizCardIds.length > 0;
   const isQuizFinished = isQuizActive && hasFinishedQuiz;
@@ -110,10 +145,107 @@ export default function Home() {
       return;
     }
 
-    setQuestionOptions(buildQuestionOptions(currentCard, cards));
+    setQuestionOptions(buildQuestionOptions(currentCard, allCards));
     setAttemptedWrongOptions([]);
     setHasAnsweredCurrentQuestion(false);
-  }, [cards, currentCard, isQuizFinished]);
+  }, [allCards, currentCard, isQuizFinished]);
+
+  const fetchCards = async (
+    page: number,
+    search: string,
+    options?: { all?: boolean; signal?: AbortSignal }
+  ) => {
+    const searchParams = new URLSearchParams();
+
+    if (options?.all) {
+      searchParams.set('all', 'true');
+    } else {
+      searchParams.set('page', page.toString());
+      searchParams.set('limit', PAGE_SIZE.toString());
+    }
+
+    if (search) {
+      searchParams.set('search', search);
+    }
+
+    const response = await fetch(`/api/cards?${searchParams.toString()}`, {
+      signal: options?.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error('Erro ao buscar cards');
+    }
+
+    return response.json() as Promise<CardsResponse>;
+  };
+
+  const refreshAllCards = async () => {
+    const data = await fetchCards(1, '', { all: true });
+    setAllCards(data.items);
+    return data.items;
+  };
+
+  const loadCardsPage = async (page: number, search: string, append: boolean) => {
+    if (append && isFetchingCardsRef.current) {
+      return;
+    }
+
+    const requestId = latestCardsRequestRef.current + 1;
+    latestCardsRequestRef.current = requestId;
+    const abortController = new AbortController();
+
+    if (!append) {
+      cardsAbortControllerRef.current?.abort();
+      cardsAbortControllerRef.current = abortController;
+    }
+
+    isFetchingCardsRef.current = true;
+
+    if (append) {
+      setIsLoadingMoreCards(true);
+    }
+
+    try {
+      const data = await fetchCards(page, search, {
+        signal: abortController.signal,
+      });
+
+      if (latestCardsRequestRef.current !== requestId) {
+        return;
+      }
+
+      setVisibleCards((previousCards) => (
+        append ? [...previousCards, ...data.items] : data.items
+      ));
+      setCurrentPage(data.page);
+      setHasMoreCards(data.hasMore);
+
+      if (!append) {
+        await refreshAllCards();
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      console.error('Failed to load cards', error);
+
+      if (!append) {
+        setVisibleCards([]);
+        setHasMoreCards(false);
+        setCurrentPage(1);
+      }
+    } finally {
+      if (!append && cardsAbortControllerRef.current === abortController) {
+        cardsAbortControllerRef.current = null;
+      }
+
+      if (latestCardsRequestRef.current === requestId) {
+        isFetchingCardsRef.current = false;
+        setIsLoadingMoreCards(false);
+      }
+    }
+  };
 
   const fetchQueue = async () => {
     try {
@@ -141,31 +273,29 @@ export default function Home() {
 
   const loadInitialData = async () => {
     try {
-      const [cardsResponse, queueResponse] = await Promise.all([
-        fetch('/api/cards'),
+      const [cardsData, allCardsData, queueResponse] = await Promise.all([
+        fetchCards(1, ''),
+        fetchCards(1, '', { all: true }),
         fetch('/api/quiz-queue'),
       ]);
-
-      if (!cardsResponse.ok) {
-        throw new Error('Erro ao buscar cards');
-      }
 
       if (!queueResponse.ok) {
         throw new Error('Erro ao buscar fila do quiz');
       }
 
-      const [cardsData, queueData] = await Promise.all([
-        cardsResponse.json(),
-        queueResponse.json(),
-      ]);
+      const queueData = await queueResponse.json();
 
-      setCards(Array.isArray(cardsData) ? cardsData : []);
+      setVisibleCards(cardsData.items);
+      setHasMoreCards(cardsData.hasMore);
+      setCurrentPage(cardsData.page);
+      setAllCards(allCardsData.items);
 
       const nextQueueIds = Array.isArray(queueData)
         ? queueData.filter((item): item is string => typeof item === 'string')
         : [];
 
       setQueueIds(nextQueueIds);
+      hasHydratedCardsRef.current = true;
     } catch (error) {
       console.error('Failed to load initial data', error);
     } finally {
@@ -224,7 +354,8 @@ export default function Home() {
       }
 
       const newCard = await response.json();
-      setCards((previousCards) => [newCard, ...previousCards]);
+      setAllCards((previousCards) => [newCard, ...previousCards]);
+      await loadCardsPage(1, debouncedFilter, false);
       await fetchQueue();
       setInputWord('');
       inputRef.current?.focus();
@@ -237,15 +368,20 @@ export default function Home() {
   };
 
   const toggleFlip = async (id: string, currentFlipped: boolean) => {
-    setCards((previousCards) => previousCards.map((card) => (
-      card.id === id ? { ...card, isFlipped: !currentFlipped } : card
+    const nextFlippedState = !currentFlipped;
+
+    setAllCards((previousCards) => previousCards.map((card) => (
+      card.id === id ? { ...card, isFlipped: nextFlippedState } : card
+    )));
+    setVisibleCards((previousCards) => previousCards.map((card) => (
+      card.id === id ? { ...card, isFlipped: nextFlippedState } : card
     )));
 
     try {
       await fetch(`/api/cards/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFlipped: !currentFlipped }),
+        body: JSON.stringify({ isFlipped: nextFlippedState }),
       });
     } catch (error) {
       console.error('Failed to sync flip state', error);
@@ -255,7 +391,8 @@ export default function Home() {
   const deleteCard = async (event: React.MouseEvent, id: string) => {
     event.stopPropagation();
 
-    setCards((previousCards) => previousCards.filter((card) => card.id !== id));
+    setAllCards((previousCards) => previousCards.filter((card) => card.id !== id));
+    setVisibleCards((previousCards) => previousCards.filter((card) => card.id !== id));
 
     try {
       const response = await fetch(`/api/cards/${id}`, { method: 'DELETE' });
@@ -264,11 +401,45 @@ export default function Home() {
         throw new Error('Erro ao excluir card');
       }
 
+      await loadCardsPage(1, debouncedFilter, false);
       await fetchQueue();
     } catch (error) {
       console.error('Failed to delete from server', error);
     }
   };
+
+  useEffect(() => {
+    if (viewMode !== 'cards' || !hasMoreCards || isLoadingMoreCards) {
+      return;
+    }
+
+    const node = loadMoreRef.current;
+
+    if (!node) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+
+        if (!entry?.isIntersecting || isFetchingCardsRef.current) {
+          return;
+        }
+
+        void loadCardsPage(currentPage + 1, debouncedFilter, true);
+      },
+      {
+        rootMargin: '200px 0px',
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [currentPage, debouncedFilter, hasMoreCards, isLoadingMoreCards, viewMode]);
 
   const startQuiz = () => {
     if (!isQueueReady || queueIds.length === 0) {
@@ -348,11 +519,6 @@ export default function Home() {
     setHasFinishedQuiz(false);
     setIsFinishingQuiz(false);
   };
-
-  const filteredCards = cards.filter((card) => (
-    card.word.toLowerCase().includes(filter.toLowerCase())
-      || card.translatedText.toLowerCase().includes(filter.toLowerCase())
-  ));
 
   if (isInitialLoading) {
     return (
@@ -496,7 +662,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               <AnimatePresence mode="popLayout">
-                {filteredCards.map((card) => (
+                {visibleCards.map((card) => (
                   <FlashcardCard
                     key={card.id}
                     card={card}
@@ -507,11 +673,21 @@ export default function Home() {
               </AnimatePresence>
             </div>
 
-            {cards.length === 0 && !isTranslating && (
+            <div ref={loadMoreRef} className="mt-8 flex min-h-10 items-center justify-center">
+              {isLoadingMoreCards && (
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              )}
+            </div>
+
+            {visibleCards.length === 0 && !isTranslating && (
               <div className="mt-20 rounded-3xl border border-dashed border-[#222] bg-[#121212] py-20 text-center">
                 <Languages className="mx-auto mb-4 h-12 w-12 text-[#222]" />
-                <p className="font-medium text-[#666]">Sua lista de flashcards esta vazia.</p>
-                <p className="mt-1 text-sm text-[#444]">Digite uma palavra acima para comecar.</p>
+                <p className="font-medium text-[#666]">
+                  {debouncedFilter ? 'Nenhum card encontrado para essa busca.' : 'Sua lista de flashcards esta vazia.'}
+                </p>
+                <p className="mt-1 text-sm text-[#444]">
+                  {debouncedFilter ? 'Tente buscar outro termo.' : 'Digite uma palavra acima para comecar.'}
+                </p>
               </div>
             )}
           </>

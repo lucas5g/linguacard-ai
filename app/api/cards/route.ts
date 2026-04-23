@@ -5,16 +5,66 @@ import prisma from '@/src/lib/prisma';
 import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
 import { translateWord } from '@/src/services/llmService';
 
+const DEFAULT_PAGE_SIZE = 10;
+
 const createFlashcardSchema = z.object({
   word: z.string().trim().min(1, 'Word obrigatoria').max(50, 'Word deve ter no maximo 50 caracteres'),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const cards = await prisma.flashcard.findMany({
-      orderBy: { createdAt: 'desc' },
+    const { searchParams } = new URL(request.url);
+    const pageParam = Number(searchParams.get('page') ?? '1');
+    const limitParam = Number(searchParams.get('limit') ?? DEFAULT_PAGE_SIZE.toString());
+    const search = searchParams.get('search')?.trim() ?? '';
+    const loadAll = searchParams.get('all') === 'true';
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+    const limit = loadAll
+      ? undefined
+      : Number.isFinite(limitParam) && limitParam > 0
+        ? Math.floor(limitParam)
+        : DEFAULT_PAGE_SIZE;
+
+    const where = search
+      ? {
+          OR: [
+            {
+              word: {
+                contains: search,
+                mode: 'insensitive' as const,
+              },
+            },
+            {
+              translatedText: {
+                contains: search,
+                mode: 'insensitive' as const,
+              },
+            },
+          ],
+        }
+      : undefined;
+
+    const [cards, total] = await Promise.all([
+      prisma.flashcard.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...(loadAll
+          ? {}
+          : {
+              skip: (page - 1) * limit,
+              take: limit,
+            }),
+      }),
+      prisma.flashcard.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      items: cards,
+      page,
+      limit: loadAll ? total : limit,
+      total,
+      hasMore: loadAll ? false : page * limit < total,
     });
-    return NextResponse.json(cards);
   } catch (error) {
     console.error("Prisma Fetch Error:", error);
     return NextResponse.json({ error: "Erro ao buscar cards" }, { status: 500 });
