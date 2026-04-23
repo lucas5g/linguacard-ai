@@ -57,6 +57,7 @@ function reorderQueueAfterQuiz(queueIds: string[], quizCardIds: string[], mistak
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [cards, setCards] = useState<Flashcard[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [inputWord, setInputWord] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [filter, setFilter] = useState('');
@@ -168,6 +169,7 @@ export default function Home() {
     } catch (error) {
       console.error('Failed to load initial data', error);
     } finally {
+      setIsInitialLoading(false);
       setIsQueueReady(true);
     }
   };
@@ -351,6 +353,57 @@ export default function Home() {
     card.word.toLowerCase().includes(filter.toLowerCase())
       || card.translatedText.toLowerCase().includes(filter.toLowerCase())
   ));
+
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5] font-sans p-4 md:p-8">
+        <div className="max-w-5xl mx-auto animate-pulse">
+          <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-3">
+              <div className="h-10 w-56 rounded-xl bg-[#181818]" />
+              <div className="h-4 w-full max-w-xl rounded-full bg-[#151515]" />
+              <div className="h-4 w-80 rounded-full bg-[#151515]" />
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <div className="h-10 w-40 rounded-full bg-[#181818]" />
+              <div className="h-10 w-32 rounded-full bg-[#151515]" />
+            </div>
+          </header>
+
+          <div className="mb-4 flex justify-end">
+            <div className="h-10 w-64 rounded-full bg-[#151515]" />
+          </div>
+
+          <div className="mb-12 rounded-2xl border border-[#222] bg-[#151515] p-2 shadow-xl">
+            <div className="flex items-center gap-2">
+              <div className="h-12 flex-1 rounded-xl bg-[#101010]" />
+              <div className="h-12 w-32 rounded-xl bg-[#E5E5E5]/10" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div
+                key={index}
+                className="h-64 rounded-3xl border border-[#222] bg-[#151515] p-8"
+              >
+                <div className="flex h-full flex-col justify-between">
+                  <div>
+                    <div className="mb-6 h-3 w-20 rounded-full bg-[#242424]" />
+                    <div className="h-8 w-3/4 rounded-xl bg-[#1C1C1C]" />
+                    <div className="mt-4 h-4 w-1/2 rounded-full bg-[#181818]" />
+                  </div>
+
+                  <div className="h-3 w-24 rounded-full bg-[#181818]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5] font-sans p-4 md:p-8">
