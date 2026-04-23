@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '@/src/lib/prisma';
 import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
-import { translateWord } from '@/src/services/geminiService';
+import { translateWord } from '@/src/services/llmService';
 
 const createFlashcardSchema = z.object({
   word: z.string().trim().min(1, 'Word obrigatoria').max(50, 'Word deve ter no maximo 50 caracteres'),

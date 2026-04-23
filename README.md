@@ -15,6 +15,6 @@ View your app in AI Studio: https://ai.studio/apps/61330fdb-43b1-4a3f-becc-91f1f
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set `OPENROUTER_API_KEY` in `.env.local` to your OpenRouter API key
 3. Run the app:
    `npm run dev`

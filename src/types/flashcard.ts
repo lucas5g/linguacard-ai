@@ -1,4 +1,4 @@
-import type { TranslationResult } from '../services/geminiService';
+import type { TranslationResult } from './translation';
 
 export interface Flashcard extends TranslationResult {
   id: string;
