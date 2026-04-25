@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getReconciledQuizQueue, replaceQuizQueue } from '@/src/lib/quizQueue';
+import { getQuizQueueIds, replaceQuizQueue } from '@/src/lib/quizQueue';
 
 export async function GET() {
   try {
-    const queueIds = await getReconciledQuizQueue();
+    const queueIds = await getQuizQueueIds();
     return NextResponse.json(queueIds);
   } catch (error) {
     console.error('Quiz Queue Fetch Error:', error);
@@ -22,10 +22,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Fila invalida' }, { status: 400 });
     }
 
-    await replaceQuizQueue(queueIds);
-    const reconciledQueueIds = await getReconciledQuizQueue();
+    const nextQueueIds = await replaceQuizQueue(queueIds);
 
-    return NextResponse.json(reconciledQueueIds);
+    return NextResponse.json(nextQueueIds);
   } catch (error) {
     console.error('Quiz Queue Update Error:', error);
 

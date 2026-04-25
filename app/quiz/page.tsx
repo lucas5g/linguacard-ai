@@ -3,70 +3,31 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Brain } from 'lucide-react';
-import type { Flashcard } from '@/src/types/flashcard';
 
 const QUIZ_LENGTH = 10;
 
-type CardsResponse = {
-  items: Flashcard[];
-  page: number;
-  limit: number;
-  total: number;
-  hasMore: boolean;
+type QuizCard = {
+  id: string;
+  word: string;
+  translatedText: string;
+  pronunciation: string | null;
+  options: string[];
 };
 
-function shuffleArray<T>(items: T[]) {
-  const nextItems = [...items];
+type QuizSessionResponse = {
+  cards: QuizCard[];
+  totalQueueCount: number;
+};
 
-  for (let index = nextItems.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [nextItems[index], nextItems[swapIndex]] = [nextItems[swapIndex], nextItems[index]];
-  }
-
-  return nextItems;
-}
-
-function areArraysEqual(first: string[], second: string[]) {
-  if (first.length !== second.length) {
-    return false;
-  }
-
-  return first.every((item, index) => item === second[index]);
-}
-
-function buildQuestionOptions(currentCard: Flashcard, cards: Flashcard[]) {
-  const wrongOptions = shuffleArray(
-    Array.from(
-      new Set(
-        cards
-          .filter((card) => card.id !== currentCard.id)
-          .map((card) => card.translatedText)
-          .filter((translatedText) => translatedText !== currentCard.translatedText)
-      )
-    )
-  ).slice(0, 3);
-
-  return shuffleArray([currentCard.translatedText, ...wrongOptions]);
-}
-
-function reorderQueueAfterQuiz(queueIds: string[], quizCardIds: string[], mistakeCardIds: string[]) {
-  const quizIdSet = new Set(quizCardIds);
-  const mistakeIdSet = new Set(mistakeCardIds.filter((id) => quizIdSet.has(id)));
-  const mistakenQuizIds = quizCardIds.filter((id) => mistakeIdSet.has(id));
-  const cleanQuizIds = quizCardIds.filter((id) => !mistakeIdSet.has(id));
-  const untouchedIds = queueIds.filter((id) => !quizIdSet.has(id));
-
-  return [...mistakenQuizIds, ...untouchedIds, ...cleanQuizIds];
-}
+type QuizCompletionResponse = {
+  totalQueueCount: number;
+};
 
 export default function QuizPage() {
-  const [allCards, setAllCards] = useState<Flashcard[]>([]);
+  const [quizCards, setQuizCards] = useState<QuizCard[]>([]);
+  const [queueCount, setQueueCount] = useState(0);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [queueIds, setQueueIds] = useState<string[]>([]);
-  const [isQueueReady, setIsQueueReady] = useState(false);
-  const [quizCardIds, setQuizCardIds] = useState<string[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [questionOptions, setQuestionOptions] = useState<string[]>([]);
   const [attemptedWrongOptions, setAttemptedWrongOptions] = useState<string[]>([]);
   const [hasAnsweredCurrentQuestion, setHasAnsweredCurrentQuestion] = useState(false);
   const [mistakeCardIds, setMistakeCardIds] = useState<string[]>([]);
@@ -74,118 +35,62 @@ export default function QuizPage() {
   const [isFinishingQuiz, setIsFinishingQuiz] = useState(false);
 
   useEffect(() => {
-    void loadInitialData();
+    void loadQuizSession();
   }, []);
 
-  useEffect(() => {
-    const validIdSet = new Set(allCards.map((card) => card.id));
-
-    setQuizCardIds((previousQuizIds) => previousQuizIds.filter((id) => validIdSet.has(id)));
-    setMistakeCardIds((previousMistakeIds) => previousMistakeIds.filter((id) => validIdSet.has(id)));
-  }, [allCards]);
-
-  useEffect(() => {
-    if (quizCardIds.length === 0) {
-      setCurrentQuestionIndex(0);
-      return;
-    }
-
-    if (currentQuestionIndex > quizCardIds.length - 1) {
-      setCurrentQuestionIndex(quizCardIds.length - 1);
-    }
-  }, [currentQuestionIndex, quizCardIds.length]);
-
-  const currentCard = quizCardIds.length > 0
-    ? allCards.find((card) => card.id === quizCardIds[currentQuestionIndex]) ?? null
-    : null;
-  const isQuizActive = quizCardIds.length > 0;
+  const currentCard = quizCards[currentQuestionIndex] ?? null;
+  const isQuizActive = quizCards.length > 0;
   const isQuizFinished = isQuizActive && hasFinishedQuiz;
-  const studiedCardsCount = quizCardIds.length;
+  const studiedCardsCount = quizCards.length;
 
-  useEffect(() => {
-    if (!currentCard || isQuizFinished) {
-      setQuestionOptions([]);
-      setAttemptedWrongOptions([]);
-      setHasAnsweredCurrentQuestion(false);
-      return;
-    }
-
-    setQuestionOptions(buildQuestionOptions(currentCard, allCards));
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-  }, [allCards, currentCard, isQuizFinished]);
-
-  const fetchCards = async () => {
-    const response = await fetch('/api/cards?all=true');
+  const fetchQuizSession = async () => {
+    const response = await fetch(`/api/quiz-session?limit=${QUIZ_LENGTH}`);
 
     if (!response.ok) {
-      throw new Error('Erro ao buscar cards');
+      throw new Error('Erro ao carregar quiz');
     }
 
-    return response.json() as Promise<CardsResponse>;
+    return response.json() as Promise<QuizSessionResponse>;
   };
 
-  const fetchQueue = async () => {
-    const response = await fetch('/api/quiz-queue');
-
-    if (!response.ok) {
-      throw new Error('Erro ao buscar fila do quiz');
-    }
-
-    const data = await response.json();
-    return Array.isArray(data)
-      ? data.filter((item): item is string => typeof item === 'string')
-      : [];
-  };
-
-  const loadInitialData = async () => {
-    try {
-      const [cardsData, nextQueueIds] = await Promise.all([
-        fetchCards(),
-        fetchQueue(),
-      ]);
-
-      setAllCards(cardsData.items);
-      setQueueIds(nextQueueIds);
-    } catch (error) {
-      console.error('Failed to load quiz data', error);
-    } finally {
-      setIsInitialLoading(false);
-      setIsQueueReady(true);
-    }
-  };
-
-  const persistQueue = async (nextQueueIds: string[]) => {
-    const response = await fetch('/api/quiz-queue', {
+  const persistQuizResult = async () => {
+    const response = await fetch('/api/quiz-session', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ queueIds: nextQueueIds }),
+      body: JSON.stringify({
+        quizCardIds: quizCards.map((card) => card.id),
+        mistakeCardIds,
+      }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.error ?? 'Erro ao salvar fila do quiz');
+      throw new Error(errorData?.error ?? 'Erro ao salvar resultado do quiz');
     }
 
-    const data = await response.json();
-    return Array.isArray(data)
-      ? data.filter((item): item is string => typeof item === 'string')
-      : [];
+    return response.json() as Promise<QuizCompletionResponse>;
   };
 
-  const startQuiz = () => {
-    if (!isQueueReady || queueIds.length === 0) {
-      return;
+  const loadQuizSession = async () => {
+    setIsInitialLoading(true);
+
+    try {
+      const session = await fetchQuizSession();
+
+      setQuizCards(session.cards);
+      setQueueCount(session.totalQueueCount);
+      setCurrentQuestionIndex(0);
+      setAttemptedWrongOptions([]);
+      setHasAnsweredCurrentQuestion(false);
+      setMistakeCardIds([]);
+      setHasFinishedQuiz(false);
+    } catch (error) {
+      console.error('Failed to load quiz session', error);
+      setQuizCards([]);
+      setQueueCount(0);
+    } finally {
+      setIsInitialLoading(false);
     }
-
-    const nextQuizIds = queueIds.slice(0, Math.min(QUIZ_LENGTH, queueIds.length));
-
-    setQuizCardIds(nextQuizIds);
-    setCurrentQuestionIndex(0);
-    setMistakeCardIds([]);
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-    setHasFinishedQuiz(false);
   };
 
   const handleQuizAnswer = (option: string) => {
@@ -196,9 +101,11 @@ export default function QuizPage() {
     if (option === currentCard.translatedText) {
       setHasAnsweredCurrentQuestion(true);
 
-      if (currentQuestionIndex >= quizCardIds.length - 1) {
+      if (currentQuestionIndex >= quizCards.length - 1) {
         void finishQuiz();
       } else {
+        setAttemptedWrongOptions([]);
+        setHasAnsweredCurrentQuestion(false);
         setCurrentQuestionIndex((previousIndex) => previousIndex + 1);
       }
 
@@ -220,35 +127,19 @@ export default function QuizPage() {
 
     setIsFinishingQuiz(true);
 
-    const nextQueueIds = reorderQueueAfterQuiz(queueIds, quizCardIds, mistakeCardIds);
-
     try {
-      const savedQueueIds = await persistQueue(nextQueueIds);
+      const result = await persistQuizResult();
 
-      setQueueIds((previousQueueIds) => (
-        areArraysEqual(previousQueueIds, savedQueueIds) ? previousQueueIds : savedQueueIds
-      ));
-      setQuestionOptions([]);
+      setQueueCount(result.totalQueueCount);
       setAttemptedWrongOptions([]);
       setHasAnsweredCurrentQuestion(false);
       setHasFinishedQuiz(true);
     } catch (error) {
-      console.error('Failed to save quiz queue', error);
-      alert('Erro ao salvar a fila do quiz. Tente novamente.');
+      console.error('Failed to save quiz session', error);
+      alert('Erro ao salvar resultado do quiz. Tente novamente.');
     } finally {
       setIsFinishingQuiz(false);
     }
-  };
-
-  const resetQuiz = () => {
-    setQuizCardIds([]);
-    setCurrentQuestionIndex(0);
-    setQuestionOptions([]);
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-    setMistakeCardIds([]);
-    setHasFinishedQuiz(false);
-    setIsFinishingQuiz(false);
   };
 
   if (isInitialLoading) {
@@ -278,7 +169,7 @@ export default function QuizPage() {
           <div>
             <h1 className="mb-2 text-4xl font-bold tracking-tight text-white">Quiz</h1>
             <p className="max-w-xl text-[#999]">
-              Consuma os 10 primeiros cards da fila atual e salve a nova ordem ao concluir a rodada.
+              A rodada comeca automaticamente com os primeiros cards da fila e salva a nova ordem ao concluir.
             </p>
           </div>
 
@@ -294,28 +185,10 @@ export default function QuizPage() {
           <section className="rounded-[2rem] border border-[#222] bg-[#111] p-6 md:p-8">
             <div className="py-14 text-center">
               <Brain className="mx-auto mb-4 h-12 w-12 text-[#2E2E2E]" />
-              <p className="text-lg font-medium text-white">
-                {queueIds.length === 0 ? 'Nenhum card disponivel na fila.' : 'Nenhuma rodada em andamento.'}
-              </p>
-              <p className="mt-2 text-sm text-[#777]">
-                {queueIds.length === 0
-                  ? 'Adicione cards no banco para montar a fila do quiz.'
-                  : 'Inicie um quiz para consumir os 10 primeiros cards da fila atual.'}
-              </p>
+              <p className="text-lg font-medium text-white">Nenhum card disponivel na fila.</p>
+              <p className="mt-2 text-sm text-[#777]">Adicione cards no banco para montar a proxima rodada.</p>
 
               <div className="mt-8 flex justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={startQuiz}
-                  disabled={!isQueueReady || queueIds.length === 0}
-                  className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
-                    !isQueueReady || queueIds.length === 0
-                      ? 'cursor-not-allowed bg-[#1C1C1C] text-[#555]'
-                      : 'bg-white text-black hover:bg-[#E5E5E5]'
-                  }`}
-                >
-                  Iniciar quiz
-                </button>
                 <Link
                   href="/"
                   className="rounded-full border border-[#2A2A2A] bg-transparent px-5 py-2 text-sm font-medium text-[#B5B5B5] transition-colors hover:border-[#454545] hover:text-white"
@@ -345,7 +218,7 @@ export default function QuizPage() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                {questionOptions.map((option) => {
+                {currentCard.options.map((option) => {
                   const isWrongAttempt = attemptedWrongOptions.includes(option);
                   const isCorrectSelection = hasAnsweredCurrentQuestion && option === currentCard.translatedText;
 
@@ -370,13 +243,12 @@ export default function QuizPage() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={resetQuiz}
+                <Link
+                  href="/"
                   className="rounded-full border border-[#2A2A2A] bg-transparent px-5 py-2 text-sm font-medium text-[#B5B5B5] transition-colors hover:border-[#454545] hover:text-white"
                 >
-                  Sair do quiz
-                </button>
+                  Voltar ao banco
+                </Link>
               </div>
             </div>
           </section>
@@ -404,17 +276,17 @@ export default function QuizPage() {
                 </div>
                 <div className="rounded-2xl border border-[#222] bg-[#151515] p-4">
                   <p className="text-xs uppercase tracking-[0.25em] text-[#666]">Fila pronta</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">{queueIds.length}</p>
+                  <p className="mt-3 text-3xl font-semibold text-white">{queueCount}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={startQuiz}
-                  disabled={queueIds.length === 0}
+                  onClick={() => void loadQuizSession()}
+                  disabled={isInitialLoading || queueCount === 0}
                   className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
-                    queueIds.length === 0
+                    isInitialLoading || queueCount === 0
                       ? 'cursor-not-allowed bg-[#1C1C1C] text-[#555]'
                       : 'bg-white text-black hover:bg-[#E5E5E5]'
                   }`}

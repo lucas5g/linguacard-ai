@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '@/src/lib/prisma';
-import { getReconciledQuizQueue } from '@/src/lib/quizQueue';
+import { appendCardToQuizQueue, ensureQuizPositions } from '@/src/lib/quizQueue';
 import { translateWord } from '@/src/services/llmService';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -13,6 +13,8 @@ const createFlashcardSchema = z.object({
 
 export async function GET(request: Request) {
   try {
+    await ensureQuizPositions();
+
     const { searchParams } = new URL(request.url);
     const pageParam = Number(searchParams.get('page') ?? '1');
     const limitParam = Number(searchParams.get('limit') ?? DEFAULT_PAGE_SIZE.toString());
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
       },
     });
 
-    await getReconciledQuizQueue();
+    await appendCardToQuizQueue(newCard.id);
 
     return NextResponse.json(newCard);
   } catch (error) {
