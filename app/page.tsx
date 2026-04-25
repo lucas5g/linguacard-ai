@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { AnimatePresence } from 'motion/react';
-import { Brain, Languages, Plus, Search } from 'lucide-react';
+import { Languages, Plus, Search } from 'lucide-react';
 import { FlashcardCard } from './components/FlashcardCard';
 import type { Flashcard } from '../src/types/flashcard';
 
-const QUIZ_LENGTH = 10;
 const PAGE_SIZE = 10;
-
-type ViewMode = 'cards' | 'quiz';
 
 type CardsResponse = {
   items: Flashcard[];
@@ -19,53 +17,7 @@ type CardsResponse = {
   hasMore: boolean;
 };
 
-function shuffleArray<T>(items: T[]) {
-  const nextItems = [...items];
-
-  for (let index = nextItems.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [nextItems[index], nextItems[swapIndex]] = [nextItems[swapIndex], nextItems[index]];
-  }
-
-  return nextItems;
-}
-
-function areArraysEqual(first: string[], second: string[]) {
-  if (first.length !== second.length) {
-    return false;
-  }
-
-  return first.every((item, index) => item === second[index]);
-}
-
-function buildQuestionOptions(currentCard: Flashcard, cards: Flashcard[]) {
-  const wrongOptions = shuffleArray(
-    Array.from(
-      new Set(
-        cards
-          .filter((card) => card.id !== currentCard.id)
-          .map((card) => card.translatedText)
-          .filter((translatedText) => translatedText !== currentCard.translatedText)
-      )
-    )
-  ).slice(0, 3);
-
-  return shuffleArray([currentCard.translatedText, ...wrongOptions]);
-}
-
-function reorderQueueAfterQuiz(queueIds: string[], quizCardIds: string[], mistakeCardIds: string[]) {
-  const quizIdSet = new Set(quizCardIds);
-  const mistakeIdSet = new Set(mistakeCardIds.filter((id) => quizIdSet.has(id)));
-  const mistakenQuizIds = quizCardIds.filter((id) => mistakeIdSet.has(id));
-  const cleanQuizIds = quizCardIds.filter((id) => !mistakeIdSet.has(id));
-  const untouchedIds = queueIds.filter((id) => !quizIdSet.has(id));
-
-  return [...mistakenQuizIds, ...untouchedIds, ...cleanQuizIds];
-}
-
 export default function Home() {
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
-  const [allCards, setAllCards] = useState<Flashcard[]>([]);
   const [visibleCards, setVisibleCards] = useState<Flashcard[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
@@ -75,16 +27,6 @@ export default function Home() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [filter, setFilter] = useState('');
   const [debouncedFilter, setDebouncedFilter] = useState('');
-  const [queueIds, setQueueIds] = useState<string[]>([]);
-  const [isQueueReady, setIsQueueReady] = useState(false);
-  const [quizCardIds, setQuizCardIds] = useState<string[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [questionOptions, setQuestionOptions] = useState<string[]>([]);
-  const [attemptedWrongOptions, setAttemptedWrongOptions] = useState<string[]>([]);
-  const [hasAnsweredCurrentQuestion, setHasAnsweredCurrentQuestion] = useState(false);
-  const [mistakeCardIds, setMistakeCardIds] = useState<string[]>([]);
-  const [hasFinishedQuiz, setHasFinishedQuiz] = useState(false);
-  const [isFinishingQuiz, setIsFinishingQuiz] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const hasHydratedCardsRef = useRef(false);
@@ -95,13 +37,6 @@ export default function Home() {
   useEffect(() => {
     void loadInitialData();
   }, []);
-
-  useEffect(() => {
-    const validIdSet = new Set(allCards.map((card) => card.id));
-
-    setQuizCardIds((previousQuizIds) => previousQuizIds.filter((id) => validIdSet.has(id)));
-    setMistakeCardIds((previousMistakeIds) => previousMistakeIds.filter((id) => validIdSet.has(id)));
-  }, [allCards]);
 
   useEffect(() => {
     const debounceTimeout = window.setTimeout(() => {
@@ -119,57 +54,17 @@ export default function Home() {
     void loadCardsPage(1, debouncedFilter, false);
   }, [debouncedFilter]);
 
-  useEffect(() => {
-    if (quizCardIds.length === 0) {
-      setCurrentQuestionIndex(0);
-      return;
-    }
-
-    if (currentQuestionIndex > quizCardIds.length - 1) {
-      setCurrentQuestionIndex(quizCardIds.length - 1);
-    }
-  }, [currentQuestionIndex, quizCardIds.length]);
-
-  const currentCard = quizCardIds.length > 0
-    ? allCards.find((card) => card.id === quizCardIds[currentQuestionIndex]) ?? null
-    : null;
-  const isQuizActive = quizCardIds.length > 0;
-  const isQuizFinished = isQuizActive && hasFinishedQuiz;
-  const studiedCardsCount = quizCardIds.length;
-
-  useEffect(() => {
-    if (!currentCard || isQuizFinished) {
-      setQuestionOptions([]);
-      setAttemptedWrongOptions([]);
-      setHasAnsweredCurrentQuestion(false);
-      return;
-    }
-
-    setQuestionOptions(buildQuestionOptions(currentCard, allCards));
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-  }, [allCards, currentCard, isQuizFinished]);
-
-  const fetchCards = async (
-    page: number,
-    search: string,
-    options?: { all?: boolean; signal?: AbortSignal }
-  ) => {
+  const fetchCards = async (page: number, search: string, signal?: AbortSignal) => {
     const searchParams = new URLSearchParams();
-
-    if (options?.all) {
-      searchParams.set('all', 'true');
-    } else {
-      searchParams.set('page', page.toString());
-      searchParams.set('limit', PAGE_SIZE.toString());
-    }
+    searchParams.set('page', page.toString());
+    searchParams.set('limit', PAGE_SIZE.toString());
 
     if (search) {
       searchParams.set('search', search);
     }
 
     const response = await fetch(`/api/cards?${searchParams.toString()}`, {
-      signal: options?.signal,
+      signal,
     });
 
     if (!response.ok) {
@@ -177,12 +72,6 @@ export default function Home() {
     }
 
     return response.json() as Promise<CardsResponse>;
-  };
-
-  const refreshAllCards = async () => {
-    const data = await fetchCards(1, '', { all: true });
-    setAllCards(data.items);
-    return data.items;
   };
 
   const loadCardsPage = async (page: number, search: string, append: boolean) => {
@@ -206,9 +95,7 @@ export default function Home() {
     }
 
     try {
-      const data = await fetchCards(page, search, {
-        signal: abortController.signal,
-      });
+      const data = await fetchCards(page, search, abortController.signal);
 
       if (latestCardsRequestRef.current !== requestId) {
         return;
@@ -219,10 +106,6 @@ export default function Home() {
       ));
       setCurrentPage(data.page);
       setHasMoreCards(data.hasMore);
-
-      if (!append) {
-        await refreshAllCards();
-      }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
@@ -247,79 +130,19 @@ export default function Home() {
     }
   };
 
-  const fetchQueue = async () => {
-    try {
-      const response = await fetch('/api/quiz-queue');
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar fila do quiz');
-      }
-
-      const data = await response.json();
-      const nextQueueIds = Array.isArray(data)
-        ? data.filter((item): item is string => typeof item === 'string')
-        : [];
-
-      setQueueIds((previousQueueIds) => (
-        areArraysEqual(previousQueueIds, nextQueueIds) ? previousQueueIds : nextQueueIds
-      ));
-    } catch (error) {
-      console.error('Failed to load quiz queue', error);
-      setQueueIds([]);
-    } finally {
-      setIsQueueReady(true);
-    }
-  };
-
   const loadInitialData = async () => {
     try {
-      const [cardsData, allCardsData, queueResponse] = await Promise.all([
-        fetchCards(1, ''),
-        fetchCards(1, '', { all: true }),
-        fetch('/api/quiz-queue'),
-      ]);
-
-      if (!queueResponse.ok) {
-        throw new Error('Erro ao buscar fila do quiz');
-      }
-
-      const queueData = await queueResponse.json();
+      const cardsData = await fetchCards(1, '');
 
       setVisibleCards(cardsData.items);
       setHasMoreCards(cardsData.hasMore);
       setCurrentPage(cardsData.page);
-      setAllCards(allCardsData.items);
-
-      const nextQueueIds = Array.isArray(queueData)
-        ? queueData.filter((item): item is string => typeof item === 'string')
-        : [];
-
-      setQueueIds(nextQueueIds);
       hasHydratedCardsRef.current = true;
     } catch (error) {
       console.error('Failed to load initial data', error);
     } finally {
       setIsInitialLoading(false);
-      setIsQueueReady(true);
     }
-  };
-
-  const persistQueue = async (nextQueueIds: string[]) => {
-    const response = await fetch('/api/quiz-queue', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ queueIds: nextQueueIds }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.error ?? 'Erro ao salvar fila do quiz');
-    }
-
-    const data = await response.json();
-    return Array.isArray(data)
-      ? data.filter((item): item is string => typeof item === 'string')
-      : [];
   };
 
   const handleAddCard = async (event?: React.FormEvent) => {
@@ -353,10 +176,7 @@ export default function Home() {
         throw new Error(errorData?.error ?? 'Erro ao salvar no banco');
       }
 
-      const newCard = await response.json();
-      setAllCards((previousCards) => [newCard, ...previousCards]);
       await loadCardsPage(1, debouncedFilter, false);
-      await fetchQueue();
       setInputWord('');
       inputRef.current?.focus();
     } catch (error) {
@@ -370,9 +190,6 @@ export default function Home() {
   const toggleFlip = async (id: string, currentFlipped: boolean) => {
     const nextFlippedState = !currentFlipped;
 
-    setAllCards((previousCards) => previousCards.map((card) => (
-      card.id === id ? { ...card, isFlipped: nextFlippedState } : card
-    )));
     setVisibleCards((previousCards) => previousCards.map((card) => (
       card.id === id ? { ...card, isFlipped: nextFlippedState } : card
     )));
@@ -391,7 +208,6 @@ export default function Home() {
   const deleteCard = async (event: React.MouseEvent, id: string) => {
     event.stopPropagation();
 
-    setAllCards((previousCards) => previousCards.filter((card) => card.id !== id));
     setVisibleCards((previousCards) => previousCards.filter((card) => card.id !== id));
 
     try {
@@ -402,14 +218,13 @@ export default function Home() {
       }
 
       await loadCardsPage(1, debouncedFilter, false);
-      await fetchQueue();
     } catch (error) {
       console.error('Failed to delete from server', error);
     }
   };
 
   useEffect(() => {
-    if (viewMode !== 'cards' || !hasMoreCards || isLoadingMoreCards) {
+    if (!hasMoreCards || isLoadingMoreCards) {
       return;
     }
 
@@ -439,91 +254,12 @@ export default function Home() {
     return () => {
       observer.disconnect();
     };
-  }, [currentPage, debouncedFilter, hasMoreCards, isLoadingMoreCards, viewMode]);
-
-  const startQuiz = () => {
-    if (!isQueueReady || queueIds.length === 0) {
-      return;
-    }
-
-    const nextQuizIds = queueIds.slice(0, Math.min(QUIZ_LENGTH, queueIds.length));
-
-    setViewMode('quiz');
-    setQuizCardIds(nextQuizIds);
-    setCurrentQuestionIndex(0);
-    setMistakeCardIds([]);
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-    setHasFinishedQuiz(false);
-  };
-
-  const handleQuizAnswer = (option: string) => {
-    if (!currentCard || hasAnsweredCurrentQuestion || attemptedWrongOptions.includes(option) || isFinishingQuiz) {
-      return;
-    }
-
-    if (option === currentCard.translatedText) {
-      setHasAnsweredCurrentQuestion(true);
-
-      if (currentQuestionIndex >= quizCardIds.length - 1) {
-        void finishQuiz();
-      } else {
-        setCurrentQuestionIndex((previousIndex) => previousIndex + 1);
-      }
-
-      return;
-    }
-
-    setAttemptedWrongOptions((previousOptions) => [...previousOptions, option]);
-    setMistakeCardIds((previousMistakeIds) => (
-      previousMistakeIds.includes(currentCard.id)
-        ? previousMistakeIds
-        : [...previousMistakeIds, currentCard.id]
-    ));
-  };
-
-  const finishQuiz = async () => {
-    if (isFinishingQuiz) {
-      return;
-    }
-
-    setIsFinishingQuiz(true);
-
-    const nextQueueIds = reorderQueueAfterQuiz(queueIds, quizCardIds, mistakeCardIds);
-
-    try {
-      const savedQueueIds = await persistQueue(nextQueueIds);
-
-      setQueueIds(savedQueueIds);
-      setQuestionOptions([]);
-      setAttemptedWrongOptions([]);
-      setHasAnsweredCurrentQuestion(false);
-      setHasFinishedQuiz(true);
-    } catch (error) {
-      console.error('Failed to save quiz queue', error);
-      await fetchQueue();
-      alert('Erro ao salvar a fila do quiz. Tente novamente.');
-    } finally {
-      setIsFinishingQuiz(false);
-    }
-  };
-
-  const leaveQuiz = () => {
-    setViewMode('cards');
-    setQuizCardIds([]);
-    setCurrentQuestionIndex(0);
-    setQuestionOptions([]);
-    setAttemptedWrongOptions([]);
-    setHasAnsweredCurrentQuestion(false);
-    setMistakeCardIds([]);
-    setHasFinishedQuiz(false);
-    setIsFinishingQuiz(false);
-  };
+  }, [currentPage, debouncedFilter, hasMoreCards, isLoadingMoreCards]);
 
   if (isInitialLoading) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5] font-sans p-4 md:p-8">
-        <div className="max-w-5xl mx-auto animate-pulse">
+      <div className="min-h-screen bg-[#0A0A0A] p-4 font-sans text-[#F5F5F5] md:p-8">
+        <div className="mx-auto max-w-5xl animate-pulse">
           <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="space-y-3">
               <div className="h-10 w-56 rounded-xl bg-[#181818]" />
@@ -532,7 +268,6 @@ export default function Home() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <div className="h-10 w-40 rounded-full bg-[#181818]" />
               <div className="h-10 w-32 rounded-full bg-[#151515]" />
             </div>
           </header>
@@ -572,249 +307,102 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5] font-sans p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#0A0A0A] p-4 font-sans text-[#F5F5F5] md:p-8">
+      <div className="mx-auto max-w-5xl">
         <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-4xl font-bold tracking-tight mb-2 text-white">LinguaCard</h1>
-            <p className="text-[#999] max-w-xl">
+            <h1 className="mb-2 text-4xl font-bold tracking-tight text-white">LinguaCard</h1>
+            <p className="max-w-xl text-[#999]">
               Monte seu banco de palavras e pratique com um quiz de 10 perguntas usando uma fila salva no banco.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === 'cards'
-                  ? 'bg-white text-black'
-                  : 'border border-[#2A2A2A] bg-[#151515] text-[#B5B5B5] hover:border-[#404040] hover:text-white'
-              }`}
-            >
-              Banco de palavras
-            </button>
-            <button
-              type="button"
-              onClick={startQuiz}
-              disabled={!isQueueReady || queueIds.length === 0}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                !isQueueReady || queueIds.length === 0
-                  ? 'cursor-not-allowed bg-[#151515] text-[#555]'
-                  : viewMode === 'quiz' && isQuizActive
-                    ? 'bg-white text-black'
-                    : 'border border-[#2A2A2A] bg-[#151515] text-[#B5B5B5] hover:border-[#404040] hover:text-white'
-              }`}
+            <Link
+              href="/quiz"
+              className="rounded-full border border-[#2A2A2A] bg-[#151515] px-4 py-2 text-sm font-medium text-[#B5B5B5] transition-colors hover:border-[#404040] hover:text-white"
             >
               Iniciar quiz
-            </button>
+            </Link>
           </div>
         </header>
 
-        {viewMode === 'cards' && (
-          <>
-            <div className="mb-4 flex justify-end">
-              <div className="relative group">
-                <Search className="absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-[#4A4A4A] transition-colors group-focus-within:text-[#BDBDBD]" />
-                <input
-                  type="text"
-                  placeholder="Buscar palavra..."
-                  value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
-                  className="w-64 border-0 border-b border-[#222] bg-transparent px-0 py-2 pl-7 text-sm text-white transition-all placeholder:text-[#555] focus:border-[#555] focus:outline-none"
-                />
-              </div>
+        <div className="mb-4 flex justify-end">
+          <div className="group relative">
+            <Search className="absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-[#4A4A4A] transition-colors group-focus-within:text-[#BDBDBD]" />
+            <input
+              type="text"
+              placeholder="Buscar palavra..."
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              className="w-64 border-0 border-b border-[#222] bg-transparent px-0 py-2 pl-7 text-sm text-white transition-all placeholder:text-[#555] focus:border-[#555] focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="mb-12">
+          <form onSubmit={handleAddCard}>
+            <div className="flex items-center gap-2 rounded-2xl border border-[#222] bg-[#151515] p-2 shadow-xl">
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Adicione palavra em ingles..."
+                value={inputWord}
+                onChange={(event) => setInputWord(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent px-4 py-3 text-lg text-white placeholder:text-[#444] focus:outline-none"
+                disabled={isTranslating}
+              />
+              <button
+                type="submit"
+                disabled={!inputWord.trim() || isTranslating}
+                className={`flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-6 font-medium transition-all ${
+                  isTranslating
+                    ? 'bg-[#222] text-[#555]'
+                    : 'bg-white text-black hover:bg-[#E5E5E5] active:scale-95'
+                }`}
+              >
+                {isTranslating ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                ) : (
+                  <>
+                    <Plus className="h-12 w-5" />
+                    Adicionar
+                  </>
+                )}
+              </button>
             </div>
+          </form>
+        </div>
 
-            <div className="mb-12">
-              <form onSubmit={handleAddCard}>
-                <div className="flex items-center gap-2 rounded-2xl border border-[#222] bg-[#151515] p-2 shadow-xl">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    placeholder="Adicione palavra em ingles..."
-                    value={inputWord}
-                    onChange={(event) => setInputWord(event.target.value)}
-                    className="min-w-0 flex-1 bg-transparent px-4 py-3 text-lg text-white placeholder:text-[#444] focus:outline-none"
-                    disabled={isTranslating}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!inputWord.trim() || isTranslating}
-                    className={`shrink-0 flex items-center justify-center gap-2 rounded-xl px-6 font-medium transition-all h-12 ${
-                      isTranslating
-                        ? 'bg-[#222] text-[#555]'
-                        : 'bg-white text-black hover:bg-[#E5E5E5] active:scale-95'
-                    }`}
-                  >
-                    {isTranslating ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                    ) : (
-                      <>
-                        <Plus className="h-12 w-5" />
-                        Adicionar
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <AnimatePresence mode="popLayout">
+            {visibleCards.map((card) => (
+              <FlashcardCard
+                key={card.id}
+                card={card}
+                onToggleFlip={toggleFlip}
+                onDelete={deleteCard}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <AnimatePresence mode="popLayout">
-                {visibleCards.map((card) => (
-                  <FlashcardCard
-                    key={card.id}
-                    card={card}
-                    onToggleFlip={toggleFlip}
-                    onDelete={deleteCard}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
+        <div ref={loadMoreRef} className="mt-8 flex min-h-10 items-center justify-center">
+          {isLoadingMoreCards && (
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+          )}
+        </div>
 
-            <div ref={loadMoreRef} className="mt-8 flex min-h-10 items-center justify-center">
-              {isLoadingMoreCards && (
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-              )}
-            </div>
-
-            {visibleCards.length === 0 && !isTranslating && (
-              <div className="mt-20 rounded-3xl border border-dashed border-[#222] bg-[#121212] py-20 text-center">
-                <Languages className="mx-auto mb-4 h-12 w-12 text-[#222]" />
-                <p className="font-medium text-[#666]">
-                  {debouncedFilter ? 'Nenhum card encontrado para essa busca.' : 'Sua lista de flashcards esta vazia.'}
-                </p>
-                <p className="mt-1 text-sm text-[#444]">
-                  {debouncedFilter ? 'Tente buscar outro termo.' : 'Digite uma palavra acima para comecar.'}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-
-        {viewMode === 'quiz' && (
-          <section className="rounded-[2rem] border border-[#222] bg-[#111] p-6 md:p-8">
-            {!isQuizActive && (
-              <div className="py-14 text-center">
-                <Brain className="mx-auto mb-4 h-12 w-12 text-[#2E2E2E]" />
-                <p className="text-lg font-medium text-white">Nenhuma rodada em andamento.</p>
-                <p className="mt-2 text-sm text-[#777]">
-                  Inicie um quiz para consumir os 10 primeiros cards da fila atual.
-                </p>
-              </div>
-            )}
-
-            {isQuizActive && !isQuizFinished && currentCard && (
-              <div className="space-y-8">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-[#666]">Quiz</p>
-                    <h2 className="mt-2 text-3xl font-bold text-white">{currentCard.word}</h2>
-                    {currentCard.pronunciation && (
-                      <p className="mt-2 text-sm italic text-[#8A8A8A]">/{currentCard.pronunciation}/</p>
-                    )}
-                  </div>
-
-                  <div className="rounded-2xl border border-[#222] bg-[#151515] px-4 py-3 text-sm text-[#D8D8D8]">
-                    Questao {currentQuestionIndex + 1} de {studiedCardsCount}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  {questionOptions.map((option) => {
-                    const isWrongAttempt = attemptedWrongOptions.includes(option);
-                    const isCorrectSelection = hasAnsweredCurrentQuestion && option === currentCard.translatedText;
-
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => handleQuizAnswer(option)}
-                        disabled={hasAnsweredCurrentQuestion || isWrongAttempt}
-                        className={`rounded-2xl border px-5 py-4 text-left text-sm transition-colors ${
-                          isCorrectSelection
-                            ? 'border-emerald-500 bg-emerald-950/40 text-emerald-100'
-                            : isWrongAttempt
-                              ? 'border-red-500 bg-red-950/40 text-red-100'
-                              : 'border-[#2A2A2A] bg-[#151515] text-[#E8E8E8] hover:border-[#454545] hover:bg-[#1A1A1A]'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* <div className="rounded-2xl border border-[#222] bg-[#151515] p-4 text-sm text-[#A7A7A7]">
-                  {hasAnsweredCurrentQuestion
-                    ? 'Resposta correta. Avance para a proxima questao.'
-                    : attemptedWrongOptions.length > 0
-                      ? 'Opcao errada marcada em vermelho. Tente novamente sem repetir a questao nesta partida.'
-                      : 'Escolha a traducao correta em portugues.'}
-                </div> */}
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={leaveQuiz}
-                    className="rounded-full border border-[#2A2A2A] bg-transparent px-5 py-2 text-sm font-medium text-[#B5B5B5] transition-colors hover:border-[#454545] hover:text-white"
-                  >
-                    Sair do quiz
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {isQuizFinished && (
-              <div className="space-y-6 py-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-[#666]">Rodada concluida</p>
-                  <h2 className="mt-2 text-3xl font-bold text-white">Quiz encerrado</h2>
-                  <p className="mt-3 max-w-2xl text-sm text-[#A0A0A0]">
-                    Cards com erro voltaram para o topo da fila da proxima partida. Os cards sem erro foram enviados para o final.
-                  </p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="rounded-2xl border border-[#222] bg-[#151515] p-4">
-                    <p className="text-xs uppercase tracking-[0.25em] text-[#666]">Questoes</p>
-                    <p className="mt-3 text-3xl font-semibold text-white">{studiedCardsCount}</p>
-                  </div>
-                  <div className="rounded-2xl border border-[#222] bg-[#151515] p-4">
-                    <p className="text-xs uppercase tracking-[0.25em] text-[#666]">Com erro</p>
-                    <p className="mt-3 text-3xl font-semibold text-white">{mistakeCardIds.length}</p>
-                  </div>
-                  <div className="rounded-2xl border border-[#222] bg-[#151515] p-4">
-                    <p className="text-xs uppercase tracking-[0.25em] text-[#666]">Fila pronta</p>
-                    <p className="mt-3 text-3xl font-semibold text-white">{queueIds.length}</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={startQuiz}
-                    disabled={queueIds.length === 0}
-                    className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
-                      queueIds.length === 0
-                        ? 'cursor-not-allowed bg-[#1C1C1C] text-[#555]'
-                        : 'bg-white text-black hover:bg-[#E5E5E5]'
-                    }`}
-                  >
-                    Iniciar nova rodada
-                  </button>
-                  <button
-                    type="button"
-                    onClick={leaveQuiz}
-                    className="rounded-full border border-[#2A2A2A] bg-transparent px-5 py-2 text-sm font-medium text-[#B5B5B5] transition-colors hover:border-[#454545] hover:text-white"
-                  >
-                    Voltar ao banco
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
+        {visibleCards.length === 0 && !isTranslating && (
+          <div className="mt-20 rounded-3xl border border-dashed border-[#222] bg-[#121212] py-20 text-center">
+            <Languages className="mx-auto mb-4 h-12 w-12 text-[#222]" />
+            <p className="font-medium text-[#666]">
+              {debouncedFilter ? 'Nenhum card encontrado para essa busca.' : 'Sua lista de flashcards esta vazia.'}
+            </p>
+            <p className="mt-1 text-sm text-[#444]">
+              {debouncedFilter ? 'Tente buscar outro termo.' : 'Digite uma palavra acima para comecar.'}
+            </p>
+          </div>
         )}
       </div>
     </div>
